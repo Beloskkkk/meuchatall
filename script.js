@@ -2,18 +2,73 @@ let username = '';
 let friends = [];
 let avatarUrl = '';
 let userKey = '';
+let ws;
 
-// Verificar se há usuário logado ao carregar a página
-window.onload = function() {
-    const storedUsername = localStorage.getItem('username');
-    const storedUserKey = localStorage.getItem('userKey');
+// Conectar ao WebSocket
+connectWebSocket();
 
-    if (storedUsername && storedUserKey) {
-        username = storedUsername;
-        userKey = storedUserKey;
-        showMainContent();
+function connectWebSocket() {
+    ws = new WebSocket('ws://localhost:3000'); // Substitua pelo seu endpoint WebSocket
+
+    ws.onopen = function() {
+        console.log('Conectado ao servidor WebSocket');
+    };
+
+    ws.onmessage = function(event) {
+        const message = JSON.parse(event.data);
+        handleIncomingMessage(message);
+    };
+
+    ws.onerror = function(error) {
+        console.error('Erro ao conectar WebSocket:', error);
+    };
+
+    ws.onclose = function() {
+        console.log('Conexão WebSocket fechada');
+    };
+}
+
+function handleIncomingMessage(message) {
+    const messageContainer = document.createElement('div');
+    messageContainer.classList.add('message');
+
+    if (message.text) {
+        const textMessage = document.createElement('div');
+        textMessage.textContent = message.text;
+        messageContainer.appendChild(textMessage);
     }
-};
+
+    if (message.fileUrl) {
+        const fileMessage = document.createElement('div');
+        if (message.fileType.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.src = message.fileUrl;
+            img.style.maxWidth = '100%';
+            fileMessage.appendChild(img);
+        } else if (message.fileType.startsWith('video/')) {
+            const video = document.createElement('video');
+            video.src = message.fileUrl;
+            video.controls = true;
+            video.style.maxWidth = '100%';
+            fileMessage.appendChild(video);
+        } else if (message.fileType.startsWith('audio/')) {
+            const audio = document.createElement('audio');
+            audio.src = message.fileUrl;
+            audio.controls = true;
+            fileMessage.appendChild(audio);
+        } else {
+            const link = document.createElement('a');
+            link.href = message.fileUrl;
+            link.textContent = 'Download ' + message.fileName;
+            fileMessage.appendChild(link);
+        }
+
+        messageContainer.appendChild(fileMessage);
+    }
+
+    document.getElementById('chat-messages').appendChild(messageContainer);
+    messageContainer.scrollIntoView({ behavior: 'smooth' });
+}
 
 function chooseOption(option) {
     document.getElementById('menu-container').style.display = 'none';
@@ -82,24 +137,9 @@ function logout() {
     document.getElementById('login-container').style.display = 'none';
     document.getElementById('signup-container').style.display = 'none';
     document.getElementById('menu-container').style.display = 'flex';
-}
 
-function addFriend() {
-    const friendUsername = document.getElementById('friend-username').value.trim();
-    if (friendUsername && !friends.includes(friendUsername)) {
-        friends.push(friendUsername);
-        updateFriendList();
-    }
-}
-
-function updateFriendList() {
-    const friendList = document.getElementById('friend-list');
-    friendList.innerHTML = '<div>Bem-vindo, ' + username + '!</div>';
-    friends.forEach(friend => {
-        const friendDiv = document.createElement('div');
-        friendDiv.textContent = friend;
-        friendList.appendChild(friendDiv);
-    });
+    // Fechar conexão WebSocket ao fazer logout
+    ws.close();
 }
 
 function changeAvatar() {
@@ -124,50 +164,30 @@ function sendMessage() {
     const file = fileInput.files[0];
 
     if (message || file) {
-        const messageContainer = document.createElement('div');
-        messageContainer.classList.add('message');
-
-        if (message) {
-            const textMessage = document.createElement('div');
-            textMessage.textContent = message;
-            messageContainer.appendChild(textMessage);
-        }
+        const messageData = {
+            username: username,
+            text: message,
+            fileUrl: '',
+            fileType: '',
+            fileName: ''
+        };
 
         if (file) {
-            const fileMessage = document.createElement('div');
-            const fileUrl = URL.createObjectURL(file);
-
-            if (file.type.startsWith('image/')) {
-                const img = document.createElement('img');
-                img.src = fileUrl;
-                img.style.maxWidth = '100%';
-                fileMessage.appendChild(img);
-            } else if (file.type.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.src = fileUrl;
-                video.controls = true;
-                video.style.maxWidth = '100%';
-                fileMessage.appendChild(video);
-            } else if (file.type.startsWith('audio/')) {
-                const audio = document.createElement('audio');
-                audio.src = fileUrl;
-                audio.controls = true;
-                fileMessage.appendChild(audio);
-            } else {
-                const link = document.createElement('a');
-                link.href = fileUrl;
-                link.textContent = 'Download ' + file.name;
-                fileMessage.appendChild(link);
-            }
-
-            messageContainer.appendChild(fileMessage);
+            const fileReader = new FileReader();
+            fileReader.onload = function(event) {
+                messageData.fileUrl = event.target.result;
+                messageData.fileType = file.type;
+                messageData.fileName = file.name;
+                ws.send(JSON.stringify(messageData));
+            };
+            fileReader.readAsDataURL(file);
+        } else {
+            ws.send(JSON.stringify(messageData));
         }
 
-        document.getElementById('chat-messages').appendChild(messageContainer);
         input.value = '';
         fileInput.value = '';
         input.focus();
-        messageContainer.scrollIntoView({ behavior: 'smooth' });
     }
 }
 
